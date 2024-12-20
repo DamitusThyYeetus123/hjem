@@ -8,7 +8,7 @@
   inherit (lib.options) mkOption mkEnableOption;
   inherit (lib.strings) hasPrefix concatStringsSep;
   inherit (lib.lists) filter map;
-  inherit (lib.attrsets) filterAttrs mapAttrs' attrValues mapAttrsToList;
+  inherit (lib.attrsets) filterAttrs mapAttrs' attrValues;
   inherit (lib.types) bool submodule str path attrsOf nullOr lines;
 
   usrCfg = config.users.users;
@@ -166,33 +166,40 @@ in {
     }) (filterAttrs (_: u: u.files != {}) config.homes);
     systemd.services = mapAttrs' (name: {files, ...}: {
       name = "hjem-monitor-" + name;
-      value.enable = true;
-      value.wants = ["systemd-tmpfiles-setup.service" "nix-daemon.socket"];
-      value.after = ["nix-daemon.socket"];
-      value.wantedBy = ["default.target"];
-      value.description = "Monitoring for Hjem files";
-      value.serviceConfig = {
-        Type = "exec";
-        ExecStart = let
-          serviceScript = pkgs.writeScript "hjem-monitor-script" ''
-            #! ${pkgs.runtimeShell} -e
-            code=0
-            for var in "$@"
-            do
-              if [ ! -L "$var" ] ; then
-                echo "$var is not controlled by hjem due to a file conflict"
-                code=1
+      value = {
+        enable = true;
+        wants = ["systemd-tmpfiles-setup.service" "nix-daemon.socket"];
+        after = ["nix-daemon.socket"];
+        wantedBy = ["default.target"];
+        description = "Monitoring for Hjem files";
+        serviceConfig = {
+          Type = "exec";
+          ExecStart = let
+            serviceScript = pkgs.writeScript "hjem-monitor-script" ''
+              #! ${pkgs.runtimeShell} -e
+              code=0
+              err=""
+              normal=""
+              if test -t 1; then
+                ncolors=$(tput colors)
+                if test -n "$ncolors" && test $ncolors -ge 8; then
+                  err="$(tput bold)$(tput setaf 3)"
+                  normal="$(tput sgr0)"
+                fi
               fi
-            done
-            if [ "$code" -eq "0" ] ; then
-              exit 0
-            else
-              exit 1
-            fi
-          '';
-        in "${serviceScript} ${toString (map (
-          file: file.target
-        ) (filter (f: f.enable && f.source != null) (attrValues files)))}";
+              for var in "$@"
+              do
+                if [ ! -L "$var" ] ; then
+                  echo "''${bold}$var is not managed by Hjem due to a file conflict, please move or remove the current file.''${normal}"
+                  code=1
+                fi
+              done
+              exit $code
+            '';
+          in "${serviceScript} ${toString (map (
+            file: file.target
+          ) (filter (f: f.enable && f.source != null) (attrValues files)))}";
+        };
       };
     }) (filterAttrs (_: u: u.files != {}) config.homes);
   };
