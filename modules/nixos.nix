@@ -172,33 +172,32 @@ in {
         after = ["nix-daemon.socket"];
         wantedBy = ["default.target"];
         description = "Monitoring for Hjem files";
+        scriptArgs = "${toString (map (
+          file: file.target
+        ) (filter (f: f.enable && f.source != null) (attrValues files)))}";
+        script = ''
+          #! ${pkgs.runtimeShell} -e
+          code=0
+          err=""
+          normal=""
+          if test -t 1; then
+            ncolors=$(tput colors)
+            if test -n "$ncolors" && test $ncolors -ge 8; then
+              err="$(tput bold)$(tput setaf 3)"
+              normal="$(tput sgr0)"
+            fi
+          fi
+          for var in "$@"
+          do
+            if [ ! -L "$var" ] ; then
+              echo "''${bold}$var is not managed by Hjem due to a file conflict, please move or remove the current file.''${normal}"
+              code=1
+            fi
+          done
+          exit $code
+        '';
         serviceConfig = {
           Type = "exec";
-          ExecStart = let
-            serviceScript = pkgs.writeScript "hjem-monitor-script" ''
-              #! ${pkgs.runtimeShell} -e
-              code=0
-              err=""
-              normal=""
-              if test -t 1; then
-                ncolors=$(tput colors)
-                if test -n "$ncolors" && test $ncolors -ge 8; then
-                  err="$(tput bold)$(tput setaf 3)"
-                  normal="$(tput sgr0)"
-                fi
-              fi
-              for var in "$@"
-              do
-                if [ ! -L "$var" ] ; then
-                  echo "''${bold}$var is not managed by Hjem due to a file conflict, please move or remove the current file.''${normal}"
-                  code=1
-                fi
-              done
-              exit $code
-            '';
-          in "${serviceScript} ${toString (map (
-            file: file.target
-          ) (filter (f: f.enable && f.source != null) (attrValues files)))}";
         };
       };
     }) (filterAttrs (_: u: u.files != {}) config.homes);
