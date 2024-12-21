@@ -167,14 +167,14 @@ in {
     systemd.services = mapAttrs' (name: {files, ...}: {
       name = "hjem-monitor-" + name;
       value = {
-        enable = true;
         wants = ["systemd-tmpfiles-setup.service" "nix-daemon.socket"];
         after = ["nix-daemon.socket"];
-        wantedBy = ["default.target"];
+        wantedBy = ["multi-user.target"];
         description = "Monitoring for Hjem files";
         scriptArgs = "${toString (map (
           file: file.target
         ) (filter (f: f.enable && f.source != null) (attrValues files)))}";
+        enableStrictShellChecks = true;
         script = ''
           #! ${pkgs.runtimeShell} -e
           code=0
@@ -182,7 +182,7 @@ in {
           normal=""
           if test -t 1; then
             ncolors=$(tput colors)
-            if test -n "$ncolors" && test $ncolors -ge 8; then
+            if test -n "$ncolors" && test "$ncolors" -ge 8; then
               err="$(tput bold)$(tput setaf 3)"
               normal="$(tput sgr0)"
             fi
@@ -190,7 +190,7 @@ in {
           for var in "$@"
           do
             if [ ! -L "$var" ] ; then
-              echo "''${bold}$var is not managed by Hjem due to a file conflict, please move or remove the current file.''${normal}"
+              echo "''${err}$var is not managed by Hjem due to a file conflict, please move or remove the current file.''${normal}"
               code=1
             fi
           done
